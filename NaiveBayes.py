@@ -5,6 +5,7 @@ import getopt
 import os
 import math
 import operator
+import time
 import collections
 from pprint import pprint
 
@@ -33,20 +34,16 @@ class NaiveBayes:
     self.BOOLEAN_NB = False
     self.stopList = set(self.readFile('data/english.stop'))
     self.numFolds = 10
-    self.klass_docs = collections.defaultdict(list)
-    self.word_counts = collections.defaultdict(dict)
+    self.klass_words = collections.defaultdict(
+        lambda: collections.defaultdict(lambda: 0))
+    self.klass_doc_counts = collections.defaultdict(lambda: 0)
+    self.vocab = set([])
 
-  #############################################################################
-  # TODO TODO TODO TODO TODO
-  # Implement the Multinomial Naive Bayes classifier and the Naive Bayes Classifier with
-  # Boolean (Binarized) features.
-  # If the BOOLEAN_NB flag is true, your methods must implement Boolean (Binarized)
-  # Naive Bayes (that relies on feature presence/absence) instead of the usual algorithm
-  # that relies on feature counts.
-  #
-  #
-  # If any one of the FILTER_STOP_WORDS and BOOLEAN_NB flags is on, the
-  # other one is meant to be off.
+  def denominator(self, klass):
+    summation = 0
+    for word in self.klass_words[klass]:
+      summation += self.klass_words[klass][word]
+    return summation + self.vocab_size + 1
 
   def classify(self, words):
     """ TODO
@@ -55,49 +52,41 @@ class NaiveBayes:
     if self.FILTER_STOP_WORDS:
       words = self.filterStopWords(words)
 
-    total_docs = sum(len(self.klass_docs[klass])
-                     for klass in self.klass_docs)
-    
-    klass_probs = {}
+    klass_probs = {k: 1.0 for k in self.klass_words}
     klass_denoms = {}
-    unknown_word_freqs = {}
-    for klass in self.klass_docs:
-      num_docs = len(self.klass_docs[klass])
-      klass_probs[klass] = math.log(num_docs) - math.log(total_docs)
+    for klass in self.klass_doc_counts:
+      klass_probs[klass] += math.log(
+          self.klass_doc_counts[klass] / self.num_docs)
       klass_denoms[klass] = self.denominator(klass)
-      unknown_word_freqs[klass] = self.unknown_word_freq(klass, klass_denoms[klass])
 
     max_val = -sys.maxint - 1
     max_klass = None
     for klass in klass_probs:
-      word_probs = 0.0
+      seen_words = set()
       for word in words:
-        if word not in self.word_counts:
-          word_probs += unknown_word_freqs[klass]
-        else:
-          numerator = 1
-          if klass in self.word_counts[word]:
-            numerator += self.word_counts[word][klass]
-          word_probs += math.log(numerator) - math.log(klass_denoms[klass])
-      klass_probs[klass] += word_probs
+        if self.BOOLEAN_NB:
+          if word in seen_words:
+            continue
+        prob = float(self.klass_words[klass][word] + 1) / klass_denoms[klass]
+        klass_probs[klass] += math.log(prob)
+        seen_words.add(word)
 
       if klass_probs[klass] > max_val:
         max_val = klass_probs[klass]
         max_klass = klass
-
     return max_klass
 
-  def denominator(self, klass):
-    summation = 0.0
-    for word in self.word_counts:
-      count = 1
-      if klass in self.word_counts[word]:
-        count = self.word_counts[word][klass]
-      summation += count
-    return summation + len(self.word_counts) + 1
+  def update_vocab(self, words):
+    words = set(words)
+    self.vocab = self.vocab.union(words)
 
-  def unknown_word_freq(self, klass, denom):
-    return 1 / denom
+  @property
+  def vocab_size(self):
+    return len(self.vocab)
+
+  @property
+  def num_docs(self):
+    return sum(self.klass_doc_counts[k] for k in self.klass_doc_counts)
 
   def addExample(self, klass, words):
     """
@@ -108,13 +97,13 @@ class NaiveBayes:
      * in the NaiveBayes class.
      * Returns nothing
     """
-    self.klass_docs[klass].append(words)
+    self.klass_doc_counts[klass] += 1
+    if self.BOOLEAN_NB:
+      words = list(set(words))
     for word in words:
-      if klass not in self.word_counts[word]:
-        self.word_counts[word][klass] = 2
-      else:
-        if not self.BOOLEAN_NB:
-          self.word_counts[word][klass] += 1
+      self.klass_words[klass][word] += 1
+
+    self.update_vocab(words)
 
   # END TODO (Modify code beyond here with caution)
   #############################################################################
@@ -259,4 +248,7 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    end_time = time.time()
+    print("Time elapsed: %i" % (end_time - start_time))
